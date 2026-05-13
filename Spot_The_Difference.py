@@ -4,7 +4,7 @@
 # Group Members:
 #   Member 1 - [Ayush Bhusal] : DifferenceRegion class
 #   Member 2 - [ROHAN RAI] : ImageProcessor class
-#   Member 3 - [AAYUSH BHUSAL] : GUI and Timer
+#   Member 3 - [AAYUSH KC] : GUI and Timer
 #   Member 4 - [Anurag Deep Silwal] : ScoreTracker class
 
 import tkinter as tk
@@ -304,3 +304,72 @@ class ImageProcessor:
         bgr = (colour[2], colour[1], colour[0])
         cv2.circle(img_cv, (cx, cy), radius, bgr, 3)
         return Image.fromarray(cv2.cvtColor(img_cv, cv2.COLOR_BGR2RGB))
+
+# Class 3 - ScoreTracker
+# contributor: Aayush KC
+# This class keeps track of score, mistakes and game state
+
+class ScoreTracker:
+
+    MAX_MISTAKES = 3
+    TOTAL_DIFFERENCES = 5
+
+    def __init__(self):
+        self.total_found = 0
+        self.mistakes = 0
+        self.locked = False
+        self.current_image_found = 0
+        self.image_history = []
+
+    def record_find(self):
+        # player found a difference
+        try:
+            self.total_found += 1
+            self.current_image_found += 1
+            return self.total_found
+        except Exception as e:
+            print("Error in record_find:", e)
+            return self.total_found
+
+    def record_mistake(self):
+        # player clicked wrong area
+        try:
+            self.mistakes += 1
+            if self.mistakes >= self.MAX_MISTAKES:
+                self.locked = True
+            return self.locked
+        except Exception as e:
+            print("Error in record_mistake:", e)
+            return self.locked
+
+    def reset_for_new_image(self):
+        # save current image result then reset for next image
+        try:
+            if self.current_image_found > 0 or self.mistakes > 0:
+                self.image_history.append({
+                    'found': self.current_image_found,
+                    'mistakes': self.mistakes,
+                    'completed': self.current_image_found >= self.TOTAL_DIFFERENCES
+                })
+            self.mistakes = 0
+            self.locked = False
+            self.current_image_found = 0
+        except Exception as e:
+            print("Error in reset:", e)
+            self.mistakes = 0
+            self.locked = False
+
+    def is_locked(self):
+        return self.locked
+
+    def get_mistakes(self):
+        return self.mistakes
+
+    def get_total_found(self):
+        return self.total_found
+
+    def get_mistakes_remaining(self):
+        return max(0, self.MAX_MISTAKES - self.mistakes)
+
+    def __str__(self):
+        return f"ScoreTracker(total={self.total_found}, mistakes={self.mistakes}/{self.MAX_MISTAKES}, locked={self.locked})"
