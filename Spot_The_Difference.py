@@ -373,3 +373,327 @@ class ScoreTracker:
 
     def __str__(self):
         return f"ScoreTracker(total={self.total_found}, mistakes={self.mistakes}/{self.MAX_MISTAKES}, locked={self.locked})"
+    
+    
+# Class 4 - SpotTheDifferenceApp
+# contributed by Anurag Deep Silwal
+# Main application window - inherits from tk.Tk
+# This class manages the GUI and connects all other classes
+
+class SpotTheDifferenceApp(tk.Tk):
+
+    CANVAS_W = 500
+    CANVAS_H = 420
+
+    def __init__(self):
+        # call parent class constructor (tk.Tk) - this creates the window
+        super().__init__()
+        self.title("HIT137 - Spot the Difference")
+        self.resizable(False, False)
+        self.config(bg="#1e1e2e")
+
+        # create processor and tracker objects (composition)
+        self.processor = ImageProcessor()
+        self.tracker = ScoreTracker()
+
+        # variables for displaying images
+        self.orig_photo = None
+        self.mod_photo = None
+        self.scale_x = 1.0
+        self.scale_y = 1.0
+
+        # timer variables
+        self.timer_seconds = 0
+        self.timer_running = False
+        self.image_count = 0
+        self.best_time = None
+        self._timer_id = None
+
+        self._build_ui()
+
+    def _build_ui(self):
+        # create all the widgets for the window
+
+        # title label at the top
+        top_frame = tk.Frame(self, bg="#1e1e2e")
+        top_frame.grid(row=0, column=0, columnspan=2, pady=(12, 4), padx=12)
+
+        tk.Label(top_frame, text="Spot the Difference",
+                 font=("Arial", 20, "bold"), fg="#cba6f7", bg="#1e1e2e").pack()
+
+        # stats bar showing remaining, mistakes, score, timer
+        stats_frame = tk.Frame(self, bg="#313244")
+        stats_frame.grid(row=1, column=0, columnspan=2, sticky="ew", padx=12, pady=4)
+
+        self.remaining_var = tk.StringVar(value="Remaining: -")
+        self.mistakes_var = tk.StringVar(value="Mistakes: 0 / 3")
+        self.score_var = tk.StringVar(value="Total Found: 0")
+        self.timer_var = tk.StringVar(value="Time: 0s")
+        self.image_count_var = tk.StringVar(value="Image: 0")
+        self.best_time_var = tk.StringVar(value="Best: --")
+
+        lbl_style = dict(font=("Arial", 11, "bold"), bg="#313244", fg="#cdd6f4", padx=10, pady=6)
+
+        tk.Label(stats_frame, textvariable=self.remaining_var, **lbl_style).grid(row=0, column=0)
+        tk.Label(stats_frame, textvariable=self.mistakes_var, **lbl_style).grid(row=0, column=1)
+        tk.Label(stats_frame, textvariable=self.score_var, **lbl_style).grid(row=0, column=2)
+        tk.Label(stats_frame, textvariable=self.timer_var, **lbl_style).grid(row=0, column=3)
+        tk.Label(stats_frame, textvariable=self.image_count_var, **lbl_style).grid(row=0, column=4)
+        tk.Label(stats_frame, textvariable=self.best_time_var, **lbl_style).grid(row=0, column=5)
+
+        self.status_lbl = tk.Label(stats_frame, text="Load an image to start!",
+                                   font=("Arial", 11), fg="#f38ba8", bg="#313244", padx=10)
+        self.status_lbl.grid(row=1, column=0, columnspan=6, pady=(0, 4))
+
+        # canvas area for displaying images side by side
+        canvas_frame = tk.Frame(self, bg="#1e1e2e")
+        canvas_frame.grid(row=2, column=0, columnspan=2, padx=12, pady=8)
+
+        tk.Label(canvas_frame, text="Original", font=("Arial", 11, "bold"),
+                 fg="#a6e3a1", bg="#1e1e2e").grid(row=0, column=0, pady=(0, 2))
+        tk.Label(canvas_frame, text="Modified  (click here!)", font=("Arial", 11, "bold"),
+                 fg="#fab387", bg="#1e1e2e").grid(row=0, column=1, pady=(0, 2))
+
+        self.orig_canvas = tk.Canvas(canvas_frame, width=self.CANVAS_W,
+                                     height=self.CANVAS_H, bg="#181825",
+                                     highlightthickness=2, highlightbackground="#585b70")
+        self.orig_canvas.grid(row=1, column=0, padx=(0, 8))
+
+        self.mod_canvas = tk.Canvas(canvas_frame, width=self.CANVAS_W,
+                                    height=self.CANVAS_H, bg="#181825",
+                                    highlightthickness=2, highlightbackground="#fab387",
+                                    cursor="crosshair")
+        self.mod_canvas.grid(row=1, column=1, padx=(8, 0))
+
+        # bind mouse click to the modified canvas only
+        self.mod_canvas.bind("<Button-1>", self._on_canvas_click)
+        self._show_placeholder()
+
+        # buttons at the bottom
+        btn_frame = tk.Frame(self, bg="#1e1e2e")
+        btn_frame.grid(row=3, column=0, columnspan=2, pady=(4, 14))
+
+        btn_style = dict(font=("Arial", 12, "bold"), width=18, pady=6, relief="flat", cursor="hand2")
+
+        self.load_btn = tk.Button(btn_frame, text="Load Image",
+                                  bg="#cba6f7", fg="#1e1e2e",
+                                  command=self._load_image, **btn_style)
+        self.load_btn.grid(row=0, column=0, padx=10)
+
+        self.reveal_btn = tk.Button(btn_frame, text="Reveal All",
+                                    bg="#f38ba8", fg="#1e1e2e",
+                                    command=self._reveal_all,
+                                    state=tk.DISABLED, **btn_style)
+        self.reveal_btn.grid(row=0, column=1, padx=10)
+
+    def _show_placeholder(self):
+        # show placeholder text on both canvases before image is loaded
+        for canvas, text in [
+            (self.orig_canvas, "Original image\nappears here"),
+            (self.mod_canvas, "Modified image\nappears here\n\nclick to play")
+        ]:
+            canvas.delete("all")
+            canvas.create_text(self.CANVAS_W // 2, self.CANVAS_H // 2,
+                               text=text, fill="#585b70",
+                               font=("Arial", 14), justify="center")
+
+    def _load_image(self):
+        # open file dialog and load selected image
+        filepath = filedialog.askopenfilename(
+            title="Choose an image",
+            filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp")]
+        )
+        if not filepath:
+            return
+
+        if not self.processor.load_image(filepath):
+            messagebox.showerror("Error", "Could not load image.")
+            return
+
+        self.processor.generate_differences()
+        self.tracker.reset_for_new_image()
+
+        # update image counter and start timer
+        self.image_count += 1
+        self.image_count_var.set(f"Image: {self.image_count}")
+        self._start_timer()
+
+        self._render_images()
+        self._update_stats()
+        self._set_status("Find all 5 differences!")
+        self.reveal_btn.config(state=tk.NORMAL)
+        self.mod_canvas.config(highlightbackground="#fab387")
+
+    def _render_images(self):
+        # get scaled images and draw them on the canvases
+        orig_pil, mod_pil, sx, sy = self.processor.get_display_images(self.CANVAS_W, self.CANVAS_H)
+        if orig_pil is None:
+            return
+        self.scale_x = sx
+        self.scale_y = sy
+        self._draw_on_canvas(self.orig_canvas, orig_pil)
+        self._draw_on_canvas(self.mod_canvas, mod_pil)
+
+    def _draw_on_canvas(self, canvas, pil_img):
+        # draw a PIL image onto a canvas widget
+        photo = ImageTk.PhotoImage(pil_img)
+        canvas.delete("all")
+        canvas.create_image(self.CANVAS_W // 2, self.CANVAS_H // 2, image=photo, anchor="center")
+        # save reference so image doesn't get deleted by garbage collector
+        if canvas == self.orig_canvas:
+            self.orig_photo = photo
+        else:
+            self.mod_photo = photo
+
+    def _redraw_circles(self):
+        # redraw images and put circles on found or revealed regions
+        orig_pil, mod_pil, sx, sy = self.processor.get_display_images(self.CANVAS_W, self.CANVAS_H)
+        if orig_pil is None:
+            return
+        self.scale_x = sx
+        self.scale_y = sy
+        for region in self.processor.difference_regions:
+            if region.found:
+                colour = (255, 50, 50)      # red circle for found
+            elif region.revealed:
+                colour = (50, 100, 255)     # blue circle for revealed
+            else:
+                continue
+            orig_pil = self.processor.draw_circle_on_image(orig_pil, region, sx, sy, colour)
+            mod_pil = self.processor.draw_circle_on_image(mod_pil, region, sx, sy, colour)
+        self._draw_on_canvas(self.orig_canvas, orig_pil)
+        self._draw_on_canvas(self.mod_canvas, mod_pil)
+
+    def _on_canvas_click(self, event):
+        # handle click on the modified canvas
+        if self.tracker.is_locked():
+            return
+        if self.processor.original_cv is None:
+            return
+        if sum(1 for r in self.processor.difference_regions if not r.found) == 0:
+            return
+
+        # convert canvas click position to original image position
+        orig_pil, _, sx, sy = self.processor.get_display_images(self.CANVAS_W, self.CANVAS_H)
+        img_w, img_h = orig_pil.size
+        offset_x = (self.CANVAS_W - img_w) // 2
+        offset_y = (self.CANVAS_H - img_h) // 2
+        img_click_x = (event.x - offset_x) / sx
+        img_click_y = (event.y - offset_y) / sy
+
+        # check if click matches any unfound region
+        hit = False
+        for region in self.processor.difference_regions:
+            if region.found:
+                continue
+            if region.contains_click(img_click_x, img_click_y):
+                region.mark_found()
+                self.tracker.record_find()
+                hit = True
+                self._redraw_circles()
+                self._update_stats()
+                self._check_completion()
+                break
+
+        if not hit:
+            locked = self.tracker.record_mistake()
+            self._update_stats()
+            remaining = self.tracker.get_mistakes_remaining()
+            if locked:
+                self._stop_timer()
+                found = sum(1 for r in self.processor.difference_regions if r.found)
+                self._set_status(f"3 mistakes! {found}/5 found. Load a new image.", colour="#f38ba8")
+                self.mod_canvas.config(highlightbackground="#f38ba8")
+            else:
+                self._set_status(f"Wrong! {remaining} mistake(s) remaining.", colour="#fab387")
+
+    def _check_completion(self):
+        # check if all 5 differences have been found
+        remaining = sum(1 for r in self.processor.difference_regions if not r.found)
+        if remaining == 0:
+            self._stop_timer()
+            elapsed = self.timer_seconds
+
+            # update best time if this is the fastest completion
+            if self.best_time is None or elapsed < self.best_time:
+                self.best_time = elapsed
+                self.best_time_var.set(f"Best: {self._format_time(elapsed)}")
+
+            self._set_status("All 5 found! Load another image to continue.", colour="#a6e3a1")
+            self._speak("Hurray! You have found all the differences. Well done!")
+            messagebox.showinfo("Well done!",
+                                f"You found all 5 differences!\n"
+                                f"Time: {self._format_time(elapsed)}\n"
+                                f"Total found this session: {self.tracker.get_total_found()}")
+
+    def _reveal_all(self):
+        # reveal all unfound differences with blue circles
+        if self.processor.original_cv is None:
+            return
+        self._stop_timer()
+        for region in self.processor.difference_regions:
+            if not region.found:
+                region.mark_revealed()
+        self._redraw_circles()
+        self.remaining_var.set("Remaining: 0")
+        self._set_status("Differences revealed in blue. Load a new image.", colour="#89dceb")
+
+    def _update_stats(self):
+        # update all the stats labels on screen
+        remaining = sum(1 for r in self.processor.difference_regions if not r.found)
+        self.remaining_var.set(f"Remaining: {remaining}")
+        self.mistakes_var.set(f"Mistakes: {self.tracker.get_mistakes()} / 3")
+        self.score_var.set(f"Total Found: {self.tracker.get_total_found()}")
+
+    def _set_status(self, text, colour="#cdd6f4"):
+        self.status_lbl.config(text=text, fg=colour)
+
+    def _speak(self, message):
+        # speak a message using text to speech in background thread
+        def run():
+            try:
+                engine = pyttsx3.init()
+                engine.setProperty('rate', 145)
+                engine.setProperty('volume', 1.0)
+                engine.say(message)
+                engine.runAndWait()
+                engine.stop()
+            except Exception as e:
+                print("TTS error:", e)
+        threading.Thread(target=run, daemon=True).start()
+
+    def _start_timer(self):
+        # start the timer from 0
+        self._stop_timer()
+        self.timer_seconds = 0
+        self.timer_var.set("Time: 0s")
+        self.timer_running = True
+        self._tick()
+
+    def _tick(self):
+        # called every second to update the timer
+        if self.timer_running:
+            self.timer_seconds += 1
+            self.timer_var.set(f"Time: {self._format_time(self.timer_seconds)}")
+            self._timer_id = self.after(1000, self._tick)
+
+    def _stop_timer(self):
+        # stop the timer
+        self.timer_running = False
+        if self._timer_id:
+            try:
+                self.after_cancel(self._timer_id)
+            except Exception:
+                pass
+
+    def _format_time(self, seconds):
+        # convert seconds into readable format
+        if seconds < 60:
+            return f"{seconds}s"
+        return f"{seconds // 60}m {seconds % 60}s"
+
+
+# run the application
+if __name__ == "__main__":
+    app = SpotTheDifferenceApp()
+    app.mainloop()
